@@ -1,0 +1,121 @@
+PI_TOKEN = '7781592878:AAG3k-S9KfBVCQf-sXD4gmKz9mR28gospwk'  # <-- Bu yerga o'z tokeningizni yozing
+GROUP_CHAT_ID = '-1002556986375'     # <-- Bu yerga guruh chat ID yozing
+
+
+
+import asyncio
+from aiogram import Bot, Dispatcher, F, types
+from aiogram.enums import ParseMode
+from aiogram.filters import CommandStart
+from aiogram.types import (
+    KeyboardButton, ReplyKeyboardMarkup, Message, ReplyKeyboardRemove, Location
+)
+from aiogram.client.default import DefaultBotProperties
+from openpyxl import load_workbook
+from rapidfuzz import fuzz
+import os
+import re
+
+TOKEN = "7781592878:AAG3k-S9KfBVCQf-sXD4gmKz9mR28gospwk"
+GROUP_CHAT_ID = "-1002556986375"
+
+# Excel dan dorilarni o‘qish
+dorilar = []
+if os.path.exists("dorilar.xlsx"):
+    wb = load_workbook("dorilar.xlsx")
+    ws = wb.active
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if row[0] and row[1]:
+            dorilar.append({
+                "nomi": str(row[0]).strip().lower(),
+                "narxi": int(row[1])
+            })
+else:
+    print("❌ dorilar.xlsx fayli topilmadi!")
+
+# Bot
+bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+dp = Dispatcher()
+
+# Tugmalar
+menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🔍 Dori qidirish")],
+        [KeyboardButton(text="📋 Retsept hisoblash")],
+        [KeyboardButton(text="📍 Apteka joylashuvi")],
+        [KeyboardButton(text="📞 Bog'lanish")],
+    ],
+    resize_keyboard=True
+)
+
+@dp.message(CommandStart())
+async def start(msg: Message):
+    await msg.answer("👋 Xush kelibsiz! MED EKSPRES botiga. Quyidagilardan birini tanlang:", reply_markup=menu)
+
+@dp.message(F.text == "📍 Apteka joylashuvi")
+async def send_location(msg: Message):
+    await msg.answer("📍 Manzil: <a href='https://maps.app.goo.gl/Q2ZtWd34w5rVxr9h6'>Google Maps'da ochish</a>")
+
+@dp.message(F.text == "📞 Bog'lanish")
+async def contact_info(msg: Message):
+    await msg.answer("📞 Biz bilan bog‘lanish:  +998 88 557 05 67 ")
+
+@dp.message(F.text == "🔍 Dori qidirish")
+async def dori_qidirish_start(msg: Message):
+    await msg.answer("🔎 Dori nomining 3-4 harfini кирил алифбосида киритинг (масалан: пара, нур)")
+
+@dp.message(F.text == "📋 Retsept hisoblash")
+async def retsept_start(msg: Message):
+    await msg.answer("📸 Iltimos, retseptdagi dorilar ro‘yxatini yozing yoki rasm yuboring:")
+
+@dp.message(F.photo)
+async def handle_photo(msg: Message):
+    await msg.answer("🧮 Ritsep hisoblanmoqda...")
+
+@dp.message()
+async def qidiruv_va_retsept(msg: Message):
+    text = msg.text.lower()
+
+    # LOTIN HARFLARINI TEKSHIRISH
+    if re.search(r'[a-z]', text):
+        await msg.answer("⚠️ Iltimos, dori nomini <b>Кирил алифбосида</b> киритинг.")
+        return
+
+    # Retsept: "," bo‘lsa — ro‘yxat
+    if "," in text:
+        dori_list = [d.strip() for d in text.split(",")]
+        topildi = []
+        jami = 0
+        for d in dori_list:
+            for item in dorilar:
+                if fuzz.partial_ratio(d, item["nomi"]) > 80:
+                    topildi.append(f"{item['nomi'].title()} - {item['narxi']} so'm")
+                    jami += item['narxi']
+                    break
+        if topildi:
+            javob = "\n".join(topildi) + f"\n\n💰 Jami: {jami} so'm"
+            if jami >= 100000:
+                javob += "\n🚚 Yetkazib berish bepul!"
+            await msg.answer(javob)
+        else:
+            await msg.answer("❌ Hech qanday dori topilmadi.")
+        return
+
+    # Oddiy qidiruv
+    mos = []
+    for item in dorilar:
+        if fuzz.partial_ratio(text, item["nomi"]) > 80:
+            mos.append(f"{item['nomi'].title()} - {item['narxi']} so'm")
+
+    if mos:
+        await msg.answer("🔎 Qidiruv natijasi  :📞 +99885570567   :\n" + "\n".join(mos))
+        await bot.send_message(GROUP_CHAT_ID, f"👤 @{msg.from_user.username or msg.from_user.full_name} dori qidirdi: {msg.text}")
+    else:
+        await msg.answer("😔 Afsuski, bu dori topilmadi.")
+
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
